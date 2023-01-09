@@ -22,6 +22,8 @@ import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.XmlRootElement;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -58,7 +60,7 @@ public class BitbucketTriggerRemovalResource {
             counter += immutableChain.getTriggerDefinitions().stream().filter(triggerDefinition -> triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY)).count();
         }
 
-        return Response.ok(String.format("Found %s bitbucket server triggers", counter)).build();
+        return Response.ok(new Status(String.format("Found %s bitbucket server triggers", counter))).build();
     }
 
     @POST
@@ -81,4 +83,19 @@ public class BitbucketTriggerRemovalResource {
         }
         return Response.noContent().build();
     }
+
+    @XmlRootElement(name = "status")
+    public class Status {
+        @XmlElement
+        private String message;
+
+        public Status(final String message) {
+            this.message = message;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+    }
+
 }
