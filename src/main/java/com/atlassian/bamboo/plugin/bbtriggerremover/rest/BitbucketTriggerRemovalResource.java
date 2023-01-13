@@ -84,11 +84,13 @@ public class BitbucketTriggerRemovalResource {
                         continue;
                     }
 
-                    final List<TriggerDefinition> triggerDefinitions = buildDefinition.getTriggerDefinitions().stream().filter(triggerDefinition -> !triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY))
-                            .collect(Collectors.toList());
+                    if (buildDefinition.getTriggerDefinitions().stream().anyMatch(triggerDefinition -> triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY))) {
+                        final List<TriggerDefinition> triggerDefinitions = buildDefinition.getTriggerDefinitions().stream().filter(triggerDefinition -> !triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY))
+                                .collect(Collectors.toList());
 
-                    buildDefinition.setTriggerDefinitions(triggerDefinitions);
-                    buildDefinitionManager.savePlanAndDefinition(plan, buildDefinition, false);
+                        buildDefinition.setTriggerDefinitions(triggerDefinitions);
+                        buildDefinitionManager.savePlanAndDefinition(plan, buildDefinition, false);
+                    }
                 }
                 return null;
             });
