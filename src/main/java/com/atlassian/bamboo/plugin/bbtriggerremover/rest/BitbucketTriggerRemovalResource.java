@@ -11,6 +11,7 @@ import com.atlassian.bamboo.security.BambooPermissionManager;
 import com.atlassian.bamboo.security.acegi.acls.BambooPermission;
 import com.atlassian.bamboo.trigger.TriggerDefinition;
 import com.atlassian.plugin.spring.scanner.annotation.imports.BambooImport;
+import com.atlassian.sal.api.transaction.TransactionTemplate;
 import org.apache.http.HttpStatus;
 import org.apache.log4j.Logger;
 
@@ -49,6 +50,10 @@ public class BitbucketTriggerRemovalResource {
     @BambooImport
     private PlanManager planManager;
 
+    @Inject
+    @BambooImport
+    private TransactionTemplate transactionTemplate;
+
     @GET
     @Path("count")
     public Response getBbTriggerStatistics() {
@@ -69,17 +74,24 @@ public class BitbucketTriggerRemovalResource {
         if (!bambooPermissionManager.hasGlobalPermission(BambooPermission.RESTRICTEDADMINISTRATION)) {
             return Response.status(HttpStatus.SC_FORBIDDEN).build();
         }
-        for (Chain plan : planManager.getAllPlans(Chain.class)) {
-            BuildDefinition buildDefinition = buildDefinitionManager.getUnmergedBuildDefinition(plan.getPlanKey());
-            if (buildDefinition.getTriggerDefinitions() == null || buildDefinition.getTriggerDefinitions().isEmpty()) {
-                continue;
-            }
+        final long planCount = planManager.getPlanCount(Chain.class);
+        for (int counter = 0; counter < planCount; counter +=100) {
+            final int offset = counter;
+            transactionTemplate.execute(() -> {
+                for (Chain plan : planManager.getAllPlans(Chain.class, offset, 100)) {
+                    BuildDefinition buildDefinition = buildDefinitionManager.getUnmergedBuildDefinition(plan.getPlanKey());
+                    if (buildDefinition.getTriggerDefinitions() == null || buildDefinition.getTriggerDefinitions().isEmpty()) {
+                        continue;
+                    }
 
-            final List<TriggerDefinition> triggerDefinitions = buildDefinition.getTriggerDefinitions().stream().filter(triggerDefinition -> !triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY))
-                    .collect(Collectors.toList());
+                    final List<TriggerDefinition> triggerDefinitions = buildDefinition.getTriggerDefinitions().stream().filter(triggerDefinition -> !triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY))
+                            .collect(Collectors.toList());
 
-            buildDefinition.setTriggerDefinitions(triggerDefinitions);
-            buildDefinitionManager.savePlanAndDefinition(plan, buildDefinition, false);
+                    buildDefinition.setTriggerDefinitions(triggerDefinitions);
+                    buildDefinitionManager.savePlanAndDefinition(plan, buildDefinition, false);
+                }
+                return null;
+            });
         }
         return Response.noContent().build();
     }
