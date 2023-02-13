@@ -10,6 +10,7 @@ import com.atlassian.bamboo.plugin.BambooPluginKeys;
 import com.atlassian.bamboo.security.BambooPermissionManager;
 import com.atlassian.bamboo.security.acegi.acls.BambooPermission;
 import com.atlassian.bamboo.trigger.TriggerDefinition;
+import com.atlassian.bamboo.trigger.TriggerDefinitionImpl;
 import com.atlassian.plugin.spring.scanner.annotation.imports.BambooImport;
 import com.atlassian.sal.api.transaction.TransactionTemplate;
 import org.apache.http.HttpStatus;
@@ -61,11 +62,13 @@ public class BitbucketTriggerRemovalResource {
             return Response.status(HttpStatus.SC_FORBIDDEN).build();
         }
         int counter = 0;
+        int enabled = 0;
         for (ImmutableChain immutableChain : cachedPlanManager.getPlans(ImmutableChain.class)) {
             counter += immutableChain.getTriggerDefinitions().stream().filter(triggerDefinition -> triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY)).count();
+            enabled += immutableChain.getTriggerDefinitions().stream().filter(triggerDefinition -> triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY) && triggerDefinition.isEnabled()).count();
         }
 
-        return Response.ok(new Status(String.format("Found %s bitbucket server triggers", counter))).build();
+        return Response.ok(new Status(String.format("Found %s bitbucket server triggers, %s of them are enabled", counter, enabled))).build();
     }
 
     @POST
@@ -84,9 +87,16 @@ public class BitbucketTriggerRemovalResource {
                         continue;
                     }
 
-                    if (buildDefinition.getTriggerDefinitions().stream().anyMatch(triggerDefinition -> triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY))) {
-                        final List<TriggerDefinition> triggerDefinitions = buildDefinition.getTriggerDefinitions().stream().filter(triggerDefinition -> !triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY))
-                                .collect(Collectors.toList());
+                    if (buildDefinition.getTriggerDefinitions().stream().anyMatch(triggerDefinition -> triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY) && triggerDefinition.isEnabled())) {
+                        final List<TriggerDefinition> triggerDefinitions = buildDefinition.getTriggerDefinitions()
+                                .stream()
+                                .map(triggerDefinition -> {
+                                    if (triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY)) {
+                                        return new TriggerDefinitionImpl.Builder().fromExisting(triggerDefinition).enabled(false).build();
+                                    } else {
+                                        return triggerDefinition;
+                                    }
+                                }).collect(Collectors.toList());
 
                         buildDefinition.setTriggerDefinitions(triggerDefinitions);
                         buildDefinitionManager.savePlanAndDefinition(plan, buildDefinition, false);
