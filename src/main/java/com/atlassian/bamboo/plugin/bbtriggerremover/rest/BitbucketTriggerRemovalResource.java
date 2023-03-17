@@ -35,6 +35,10 @@ import java.util.stream.Collectors;
 public class BitbucketTriggerRemovalResource {
     private static final Logger log = Logger.getLogger(BitbucketTriggerRemovalResource.class);
 
+    private static final String TRIGGERS_PREFIX = "com.atlassian.bamboo.triggers.atlassian-bamboo-triggers";
+    private static final String DAILY_TRIGGER = TRIGGERS_PREFIX + ":daily";
+    private static final String SCHEDULED_TRIGGER = TRIGGERS_PREFIX + ":scheduled";
+
     @Inject
     @BambooImport
     private CachedPlanManager cachedPlanManager;
@@ -63,12 +67,28 @@ public class BitbucketTriggerRemovalResource {
         }
         int counter = 0;
         int enabled = 0;
+        int scheduledCounter = 0;
+        int scheduledEnabled = 0;
         for (ImmutableChain immutableChain : cachedPlanManager.getPlans(ImmutableChain.class)) {
-            counter += immutableChain.getTriggerDefinitions().stream().filter(triggerDefinition -> triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY)).count();
-            enabled += immutableChain.getTriggerDefinitions().stream().filter(triggerDefinition -> triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY) && triggerDefinition.isEnabled()).count();
+            if (immutableChain.getPlanRepositoryDefinitions().stream().anyMatch(rd -> rd.getPluginKey().equals(BambooPluginKeys.BB_SERVER_REPOSITORY_PLUGIN_KEY))) {
+                counter += immutableChain.getTriggerDefinitions().stream().filter(BitbucketTriggerRemovalResource::isBitbucketServerTrigger).count();
+                enabled += immutableChain.getTriggerDefinitions().stream().filter(triggerDefinition -> isBitbucketServerTrigger(triggerDefinition) && triggerDefinition.isEnabled()).count();
+
+                scheduledCounter += immutableChain.getTriggerDefinitions().stream().filter(this::isScheduledTrigger).count();
+                scheduledEnabled += immutableChain.getTriggerDefinitions().stream().filter(triggerDefinition -> isScheduledTrigger(triggerDefinition) && triggerDefinition.isEnabled()).count();
+            }
         }
 
-        return Response.ok(new Status(String.format("Found %s bitbucket server triggers, %s of them are enabled", counter, enabled))).build();
+        return Response.ok(new Status(String.format("Found %s bitbucket server triggers, %s of them are enabled and %s scheduled triggers, %s of them enabled", counter, enabled, scheduledCounter, scheduledEnabled))).build();
+    }
+
+    private static boolean isBitbucketServerTrigger(TriggerDefinition triggerDefinition) {
+        return triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY);
+    }
+
+    private boolean isScheduledTrigger(TriggerDefinition triggerDefinition) {
+        final String pluginKey = triggerDefinition.getPluginKey();
+        return pluginKey.equals(DAILY_TRIGGER) || pluginKey.equals(SCHEDULED_TRIGGER);
     }
 
     @POST
@@ -87,19 +107,22 @@ public class BitbucketTriggerRemovalResource {
                         continue;
                     }
 
-                    if (buildDefinition.getTriggerDefinitions().stream().anyMatch(triggerDefinition -> triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY))) {
-                        final List<TriggerDefinition> triggerDefinitions = buildDefinition.getTriggerDefinitions()
-                                .stream()
-                                .map(triggerDefinition -> {
-                                    if (triggerDefinition.getPluginKey().equals(BambooPluginKeys.STASH_TRIGGER_PLUGIN_KEY)) {
-                                        return new TriggerDefinitionImpl.Builder().fromExisting(triggerDefinition).enabled(false).build();
-                                    } else {
-                                        return triggerDefinition;
-                                    }
-                                }).collect(Collectors.toList());
+                    if (plan.getPlanRepositoryDefinitions().stream().anyMatch(rd -> rd.getPluginKey().equals(BambooPluginKeys.BB_SERVER_REPOSITORY_PLUGIN_KEY))) {
+                        if (buildDefinition.getTriggerDefinitions().stream().anyMatch(triggerDefinition -> triggerDefinition.isEnabled() &&
+                                (isBitbucketServerTrigger(triggerDefinition) || isScheduledTrigger(triggerDefinition)))) {
+                            final List<TriggerDefinition> triggerDefinitions = buildDefinition.getTriggerDefinitions()
+                                    .stream()
+                                    .map(triggerDefinition -> {
+                                        if (isBitbucketServerTrigger(triggerDefinition) || isBitbucketServerTrigger(triggerDefinition)) {
+                                            return new TriggerDefinitionImpl.Builder().fromExisting(triggerDefinition).enabled(false).build();
+                                        } else {
+                                            return triggerDefinition;
+                                        }
+                                    }).collect(Collectors.toList());
 
-                        buildDefinition.setTriggerDefinitions(triggerDefinitions);
-                        buildDefinitionManager.savePlanAndDefinition(plan, buildDefinition);
+                            buildDefinition.setTriggerDefinitions(triggerDefinitions);
+                            buildDefinitionManager.savePlanAndDefinition(plan, buildDefinition);
+                        }
                     }
                 }
                 return null;
