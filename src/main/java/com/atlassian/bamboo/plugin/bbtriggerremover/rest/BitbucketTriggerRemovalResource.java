@@ -37,7 +37,7 @@ public class BitbucketTriggerRemovalResource {
 
     private static final String TRIGGERS_PREFIX = "com.atlassian.bamboo.triggers.atlassian-bamboo-triggers";
     private static final String DAILY_TRIGGER = TRIGGERS_PREFIX + ":daily";
-    private static final String SCHEDULED_TRIGGER = TRIGGERS_PREFIX + ":scheduled";
+    private static final String SCHEDULED_TRIGGER = TRIGGERS_PREFIX + ":schedule";
 
     @Inject
     @BambooImport
@@ -110,10 +110,12 @@ public class BitbucketTriggerRemovalResource {
                     if (plan.getPlanRepositoryDefinitions().stream().anyMatch(rd -> rd.getPluginKey().equals(BambooPluginKeys.BB_SERVER_REPOSITORY_PLUGIN_KEY))) {
                         if (buildDefinition.getTriggerDefinitions().stream().anyMatch(triggerDefinition -> triggerDefinition.isEnabled() &&
                                 (isBitbucketServerTrigger(triggerDefinition) || isScheduledTrigger(triggerDefinition)))) {
+
+                            log.info("Disabling triggers for " + plan.getPlanKey());
                             final List<TriggerDefinition> triggerDefinitions = buildDefinition.getTriggerDefinitions()
                                     .stream()
                                     .map(triggerDefinition -> {
-                                        if (isBitbucketServerTrigger(triggerDefinition) || isBitbucketServerTrigger(triggerDefinition)) {
+                                        if (isBitbucketServerTrigger(triggerDefinition) || isScheduledTrigger(triggerDefinition)) {
                                             return new TriggerDefinitionImpl.Builder().fromExisting(triggerDefinition).enabled(false).build();
                                         } else {
                                             return triggerDefinition;
